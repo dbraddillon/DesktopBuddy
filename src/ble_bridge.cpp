@@ -72,7 +72,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 // polls blePasskey() to render it.
 class SecCallbacks : public BLESecurityCallbacks {
   uint32_t onPassKeyRequest() override { return 0; }
-  bool onConfirmPIN(uint32_t) override { return false; }
+  bool onConfirmPIN(uint32_t) override { return true; }
   bool onSecurityRequest() override { return true; }
   void onPassKeyNotify(uint32_t pk) override {
     passkey = pk;
@@ -119,7 +119,7 @@ void bleInit(const char* deviceName) {
 
   BLESecurity* sec = new BLESecurity();
   sec->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
-  sec->setCapability(ESP_IO_CAP_OUT);
+  sec->setCapability(ESP_IO_CAP_IO);   // DisplayYesNo → Numeric Comparison with Windows
   sec->setKeySize(16);
   sec->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
   sec->setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
