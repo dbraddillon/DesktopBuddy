@@ -84,6 +84,7 @@ uint32_t wakeTransitionUntil = 0;
 const uint32_t SCREEN_OFF_MS = 30000;
 
 bool     napping = false;
+bool     nightMode = false;   // sticky screen-off; data arrival won't wake it
 uint32_t napStartMs = 0;
 uint32_t promptArrivedMs = 0;
 
@@ -98,12 +99,18 @@ static void applyBrightness() { M5.Display.setBrightness((20 + brightLevel * 20)
 
 static void wake() {
   lastInteractMs = millis();
-  if (screenOff) {
+  if (screenOff && !nightMode) {
     applyBrightness();
     screenOff = false;
     wakeTransitionUntil = millis() + 12000;
   }
-  if (dimmed) { applyBrightness(); dimmed = false; }
+  if (dimmed && !nightMode) { applyBrightness(); dimmed = false; }
+}
+
+// Unconditional wake — clears night mode. Use for button presses only.
+static void wakeForced() {
+  nightMode = false;
+  wake();
 }
 bool     responseSent = false;
 
@@ -479,7 +486,7 @@ PersonaState derive(const TamaState& s) {
   if (!s.connected)            return P_IDLE;
   if (s.sessionsWaiting > 0)   return P_ATTENTION;
   if (s.recentlyCompleted)     return P_CELEBRATE;
-  if (s.sessionsRunning >= 3)  return P_BUSY;
+  if (s.sessionsRunning >= 1)  return P_BUSY;
   return P_IDLE;   // connected, 0+ sessions, nothing urgent — hang out
 }
 
@@ -989,7 +996,9 @@ void loop() {
   t++;
   uint32_t now = millis();
 
+  uint32_t prevUpdated = tama.lastUpdated;
   dataPoll(&tama);
+  if (tama.lastUpdated != prevUpdated) wake();
   if (statsPollLevelUp()) triggerOneShot(P_CELEBRATE, 3000);
   baseState = derive(tama);
 
@@ -1042,21 +1051,23 @@ void loop() {
   // press cycle (including long-press) is swallowed — you don't want
   // BtnA-to-wake to also cycle displayMode or open the menu.
   if (M5.BtnA.isPressed() || M5.BtnB.isPressed()) {
-    if (screenOff) {
+    if (screenOff || nightMode) {
       if (M5.BtnA.isPressed()) swallowBtnA = true;
       if (M5.BtnB.isPressed()) swallowBtnB = true;
     }
-    wake();
+    wakeForced();
   }
 
-  // Power button (left side): short-press toggles screen off.
+  // Power button (left side): short-press toggles night mode (sticky screen-off).
   // Long-press (6s) still powers off the device via hardware.
   if (M5.BtnPWR.wasClicked()) {
-    if (screenOff) {
+    if (screenOff || nightMode) {
+      nightMode = false;
       wake();
     } else {
       M5.Display.setBrightness(0);
       screenOff = true;
+      nightMode = true;
     }
   }
 
