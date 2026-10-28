@@ -73,3 +73,12 @@ src/
 | `{"cmd":"unpair"}` | Clear BLE bonds |
 | `{"cmd":"status"}` | Dump battery/heap/stats JSON |
 | `{"cmd":"species","idx":N}` | Switch ASCII species (0xFF = GIF mode) |
+
+## Desk dashboard (added 2026-10-28)
+
+Idle screen = weather + lab health + clock, pushed over USB serial by `tools/dash-sender.ps1`
+(`{"dash":{...}}` JSON line, parsed in `src/dash.h`, drawn by `drawDash()` in `main.cpp`, portrait only;
+landscape still shows the plain clock). The line is also the presence heartbeat: the sender only sends
+while Windows reports the displays on, and the firmware blanks the screen when no dash line has arrived
+for 75s (and 30s after the last button press). Claude BLE state is unaffected (busy/approval still win).
+The sender holds COM3 - stop task `DesktopBuddyDash` before flashing. Setup: `docs/dev-machine-setup.md`.

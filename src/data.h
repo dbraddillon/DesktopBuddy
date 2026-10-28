@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include "ble_bridge.h"
 #include "xfer.h"
+#include "dash.h"
 
 struct TamaState {
   uint8_t  sessionsTotal;
@@ -65,11 +66,22 @@ inline const char* dataScenarioName() {
 // Set true once the bridge sends a time sync — until then the RTC may
 // hold whatever was on the coin cell (or 2000-01-01 if it lost power).
 static bool _rtcValid = false;
-inline bool dataRtcValid() { return _rtcValid; }
+inline bool dataRtcValid() { return _rtcValid || dashRtcSet(); }
 
 static void _applyJson(const char* line, TamaState* out) {
   JsonDocument doc;
   if (deserializeJson(doc, line)) return;
+
+  // Desk dashboard push. Deliberately does not touch _lastLiveMs — that
+  // means "a Claude bridge is talking to us", and this isn't one.
+  JsonObjectConst dash = doc["dash"];
+  if (!dash.isNull()) {
+    dashApply(dash);
+    extern uint32_t _clkLastRead;
+    _clkLastRead = 0;   // re-read the RTC next frame in case dashApply set it
+    return;
+  }
+
   if (xferCommand(doc)) { _lastLiveMs = millis(); return; }
 
   // Bridge sends {"time":[epoch_sec, tz_offset_sec]}; gmtime_r on the

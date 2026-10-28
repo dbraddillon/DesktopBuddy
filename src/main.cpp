@@ -415,6 +415,49 @@ static const char* const MON[] = {
 static const char* const DOW[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
 
 static uint8_t clockDow() { return _clkDt.weekDay % 7; }
+
+// Desk dashboard, portrait only: replaces the clock in the lower 150px while
+// the PC is pushing data (see dash.h). Pet stays on top.
+static void drawDash(const char* hm) {
+  const Palette& p = characterPalette();
+  spr->fillRect(0, 90, W, H - 90, p.bg);
+  spr->setTextDatum(TL_DATUM);
+
+  // Weather: big temp left, condition + hi/lo right.
+  char tb[8];
+  if (_dash.haveWx) snprintf(tb, sizeof(tb), "%d", _dash.temp); else snprintf(tb, sizeof(tb), "--");
+  spr->setTextSize(4); spr->setTextColor(p.text, p.bg); spr->drawString(tb, 6, 98);
+  spr->setTextSize(1); spr->setTextColor(p.textDim, p.bg);
+  spr->drawString(_dash.cond, 68, 102);
+  if (_dash.haveWx) {
+    char hl[16]; snprintf(hl, sizeof(hl), "H%d L%d", _dash.hi, _dash.lo);
+    spr->drawString(hl, 68, 116);
+  }
+  spr->drawFastHLine(6, 138, W - 12, p.textDim);
+
+  // Health: dot + up to three wrapped note lines (~16 chars each).
+  uint16_t hc = _dash.health >= 2 ? RED : _dash.health == 1 ? HOT : GREEN;
+  spr->fillCircle(14, 156, 6, hc);
+  char note[sizeof(_dash.note)]; strncpy(note, _dash.note, sizeof(note));
+  spr->setTextColor(p.text, p.bg);
+  size_t n = strlen(note), pos = 0;
+  for (int row = 0; row < 3 && pos < n; row++) {
+    char ln[18]; size_t take = min((size_t)16, n - pos);
+    if (take == 16) {   // break on the last space inside the window, if any
+      for (size_t i = 16; i > 8; i--) if (note[pos + i - 1] == ' ') { take = i; break; }
+    }
+    memcpy(ln, note + pos, take); ln[take] = 0;
+    spr->drawString(ln, 26, 148 + row * 11);
+    pos += take;
+    while (pos < n && note[pos] == ' ') pos++;
+  }
+
+  spr->setTextDatum(MC_DATUM);
+  spr->setTextSize(3); spr->setTextColor(p.textDim, p.bg); spr->drawString(hm, CX, 214);
+  spr->setTextDatum(TL_DATUM);
+  spr->setTextSize(1);
+}
+
 static void drawClock() {
   const Palette& p = characterPalette();
   char hm[6]; snprintf(hm, sizeof(hm), "%02u:%02u", _clkTm.hours, _clkTm.minutes);
@@ -424,6 +467,7 @@ static void drawClock() {
 
   if (clockOrient == 0) {
     paintedOrient = 0;
+    if (dashFresh()) { drawDash(hm); return; }
     // Bottom half — buddy naturally lives at y=0..82, GIF peeks at top
     // via peek mode. Clearing from 90 leaves both untouched.
     spr->fillRect(0, 90, W, H - 90, p.bg);
@@ -999,6 +1043,11 @@ void loop() {
   uint32_t prevUpdated = tama.lastUpdated;
   dataPoll(&tama);
   if (tama.lastUpdated != prevUpdated) wake();
+
+  // Dash heartbeat arrival wakes the screen (nightMode still wins).
+  static uint32_t prevDashMs = 0;
+  if (_dash.lastMs != prevDashMs) { prevDashMs = _dash.lastMs; wake(); }
+
   if (statsPollLevelUp()) triggerOneShot(P_CELEBRATE, 3000);
   baseState = derive(tama);
 
@@ -1265,6 +1314,16 @@ void loop() {
   // so now - lastInteractMs underflows when a button is held → flicker.
   // No auto-off on USB power — clock face wants to stay visible while charging.
   if (!screenOff && !inPrompt && !_onUsb
+      && millis() - lastInteractMs > SCREEN_OFF_MS) {
+    M5.Display.setBrightness(0);
+    screenOff = true;
+  }
+
+  // PC displays off / laptop asleep / sender stopped: no dash heartbeat for
+  // DASH_STALE_MS, so blank. The device sits on a powered hub, so _onUsb is
+  // always true and the rule above never fires. Grace period after a button
+  // press so you can still peek at it with the monitors off.
+  if (!screenOff && !inPrompt && dashStale()
       && millis() - lastInteractMs > SCREEN_OFF_MS) {
     M5.Display.setBrightness(0);
     screenOff = true;
