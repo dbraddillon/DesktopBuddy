@@ -11,7 +11,9 @@ if ($Remove) { Unregister-ScheduledTask $name -Confirm:$false -ErrorAction Silen
 
 $script = Join-Path $PSScriptRoot 'dash-sender.ps1'
 $pwsh   = (Get-Command pwsh).Source
-$action   = New-ScheduledTaskAction -Execute $pwsh -Argument "-NoProfile -WindowStyle Hidden -File `"$script`""
+# conhost --headless: no console window at all. `pwsh -WindowStyle Hidden` still pops a window
+# when Windows Terminal is the default terminal host, and closing it kills the sender.
+$action   = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless `"$pwsh`" -NoProfile -File `"$script`""
 $trigger  = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
   -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)
