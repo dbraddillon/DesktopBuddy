@@ -1208,7 +1208,7 @@ void loop() {
   bool clocking = displayMode == DISP_NORMAL
                && !menuOpen && !settingsOpen && !resetOpen && !inPrompt
                && tama.sessionsRunning == 0 && tama.sessionsWaiting == 0
-               && dataRtcValid() && _onUsb;
+               && dataRtcValid() && (_onUsb || dashFresh());   // VBUS reads low on this stick's hub; a live dash push is enough
   if (clocking) clockUpdateOrient();
   else { clockOrient = 0; orientFrames = 0; paintedOrient = 0; }
   bool landscapeClock = clocking && clockOrient != 0;
@@ -1313,16 +1313,16 @@ void loop() {
   // millis() not the cached `now`: wake() runs after `now` is captured,
   // so now - lastInteractMs underflows when a button is held → flicker.
   // No auto-off on USB power — clock face wants to stay visible while charging.
-  if (!screenOff && !inPrompt && !_onUsb
+  if (!screenOff && !inPrompt && !_onUsb && !dashFresh()
       && millis() - lastInteractMs > SCREEN_OFF_MS) {
     M5.Display.setBrightness(0);
     screenOff = true;
   }
 
   // PC displays off / laptop asleep / sender stopped: no dash heartbeat for
-  // DASH_STALE_MS, so blank. The device sits on a powered hub, so _onUsb is
-  // always true and the rule above never fires. Grace period after a button
-  // press so you can still peek at it with the monitors off.
+  // DASH_STALE_MS, so blank. Independent of _onUsb (which reads false on this
+  // stick even on the powered hub). Grace period after a button press so you
+  // can still peek at it with the monitors off.
   if (!screenOff && !inPrompt && dashStale()
       && millis() - lastInteractMs > SCREEN_OFF_MS) {
     M5.Display.setBrightness(0);
