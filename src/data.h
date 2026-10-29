@@ -192,10 +192,13 @@ inline void dataPoll(TamaState* out) {
     }
   }
 
+  bool wasConnected = out->connected;
   out->connected = dataConnected();
   if (!out->connected) {
     out->sessionsTotal=0; out->sessionsRunning=0; out->sessionsWaiting=0;
-    out->recentlyCompleted=false; out->lastUpdated=now;
+    // Stamp only on the connected->disconnected edge. Stamping every poll made main's
+    // lastUpdated-changed check call wake() every loop, so the screen could never blank.
+    out->recentlyCompleted=false; if (wasConnected) out->lastUpdated=now;
     strncpy(out->msg, "No Claude connected", sizeof(out->msg)-1);
     out->msg[sizeof(out->msg)-1]=0;
   }
