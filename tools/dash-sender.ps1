@@ -4,10 +4,10 @@
   while this PC's displays are on. The device blanks itself ~75s after the pushes stop.
 
 .DESCRIPTION
-  Presence = Windows' own display state (GUID_CONSOLE_DISPLAY_STATE). Displays off,
-  lid closed, or machine asleep -> nothing is sent -> device sleeps.
-  Not covered: a monitor switched off at its own power button when Windows still
-  thinks the display is on.
+  Presence = Windows' display state (GUID_CONSOLE_DISPLAY_STATE) AND the lid switch
+  (GUID_LIDSWITCH_STATE_CHANGE). Displays off, lid closed, or machine asleep -> nothing
+  is sent -> device sleeps. The lid event is needed because the lid-display repo keeps the
+  display logically on (brightness 0 + monitor plug off), so display state never reports off.
 
   Holds the COM port open, so `pio run -t upload` and serial monitors will fail
   while it runs. Stop it first:  Stop-ScheduledTask DesktopBuddyDash
@@ -49,17 +49,20 @@ Add-Type -ReferencedAssemblies System.Windows.Forms, System.Windows.Forms.Primit
 using System; using System.Runtime.InteropServices; using System.Threading; using System.Windows.Forms;
 public static class DisplayWatch {
   public static volatile int State = 1;
+  public static volatile bool LidClosed = false;
   static Guid G = new Guid("6fe69556-704a-47a0-8f24-c28d936fda47");  // GUID_CONSOLE_DISPLAY_STATE
+  static Guid L = new Guid("ba3e0f4d-b817-4094-a2d1-d56379e6a0f3");  // GUID_LIDSWITCH_STATE_CHANGE (0 closed, 1 open)
   [StructLayout(LayoutKind.Sequential, Pack = 4)]
   struct PBS { public Guid PowerSetting; public int DataLength; public int Data; }
   [DllImport("user32.dll", SetLastError = true)]
   static extern IntPtr RegisterPowerSettingNotification(IntPtr h, ref Guid g, int flags);
   sealed class Win : NativeWindow {
-    public Win() { CreateHandle(new CreateParams()); RegisterPowerSettingNotification(Handle, ref G, 0); }
+    public Win() { CreateHandle(new CreateParams()); RegisterPowerSettingNotification(Handle, ref G, 0); RegisterPowerSettingNotification(Handle, ref L, 0); }
     protected override void WndProc(ref Message m) {
       if (m.Msg == 0x218 && m.WParam.ToInt32() == 0x8013) {  // WM_POWERBROADCAST / PBT_POWERSETTINGCHANGE
         var s = (PBS)Marshal.PtrToStructure(m.LParam, typeof(PBS));
         if (s.PowerSetting == G) State = s.Data;
+        else if (s.PowerSetting == L) LidClosed = s.Data == 0;
       }
       base.WndProc(ref m);
     }
@@ -159,8 +162,8 @@ $hl = @{ health = 1; note = 'checking...' }; $hlAt = [datetime]::MinValue
 $wasOn = $true
 while ($true) {
   try {
-    $on = [DisplayWatch]::State -ne 0
-    if ($on -ne $wasOn) { Log "display $(if ($on) {'on'} else {'off -> pausing pushes'})"; $wasOn = $on }
+    $on = [DisplayWatch]::State -ne 0 -and -not [DisplayWatch]::LidClosed
+    if ($on -ne $wasOn) { Log "$(if ($on) {'awake'} else {'away (display off or lid closed) -> pausing pushes'})"; $wasOn = $on }
     if ($on) {
       if (((Get-Date) - $wxAt).TotalSeconds -ge $WeatherEverySec) {
         try { $wx = Get-Weather } catch { Log "weather failed: $($_.Exception.Message)" }   # keep last good value
